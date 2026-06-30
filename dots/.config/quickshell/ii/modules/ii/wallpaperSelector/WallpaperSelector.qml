@@ -1,26 +1,25 @@
-import qs
-import qs.services
-import qs.modules.common
-import qs.modules.common.widgets
-import qs.modules.common.functions
+pragma ComponentBehavior: Bound
+
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
+import qs
+import qs.services
+import qs.modules.common
+import qs.modules.common.widgets
+import "../../launcher"
 
 Scope {
     id: root
 
     Loader {
-        id: wallpaperSelectorLoader
         active: GlobalStates.wallpaperSelectorOpen
 
         sourceComponent: PanelWindow {
-            id: panelWindow
-            readonly property HyprlandMonitor monitor: Hyprland.monitorFor(panelWindow.screen)
-            property bool monitorIsFocused: (Hyprland.focusedMonitor?.id == monitor?.id)
+            id: panel
 
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "quickshell:wallpaperSelector"
@@ -28,24 +27,12 @@ Scope {
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
             color: "transparent"
 
-            anchors.top: true
-            margins {
-                top: Config?.options.bar.vertical ? Appearance.sizes.hyprlandGapsOut : Appearance.sizes.barHeight + Appearance.sizes.hyprlandGapsOut
-            }
+            anchors { top: true; bottom: true; left: true; right: true }
 
-            mask: Region {
-                item: content
-            }
+            mask: Region { item: card }
 
-            implicitHeight: Appearance.sizes.wallpaperSelectorHeight
-            implicitWidth: Appearance.sizes.wallpaperSelectorWidth
-
-            Component.onCompleted: {
-                GlobalFocusGrab.addDismissable(panelWindow);
-            }
-            Component.onDestruction: {
-                GlobalFocusGrab.removeDismissable(panelWindow);
-            }
+            Component.onCompleted: GlobalFocusGrab.addDismissable(panel)
+            Component.onDestruction: GlobalFocusGrab.removeDismissable(panel)
             Connections {
                 target: GlobalFocusGrab
                 function onDismissed() {
@@ -53,48 +40,114 @@ Scope {
                 }
             }
 
-            WallpaperSelectorContent {
-                id: content
-                anchors {
-                    fill: parent
+            Item {
+                anchors.fill: parent
+                focus: true
+                Keys.onEscapePressed: GlobalStates.wallpaperSelectorOpen = false
+
+                // Card container, styled like the rest of the shell
+                Rectangle {
+                    id: card
+
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: Appearance.sizes.barHeight + Appearance.sizes.hyprlandGapsOut
+
+                    implicitWidth: Math.min(parent.width - Appearance.sizes.hyprlandGapsOut * 2, 1400)
+                    implicitHeight: layout.implicitHeight + Appearance.rounding.normal * 2
+
+                    radius: Appearance.rounding.windowRounding
+                    color: Appearance.colors.colLayer0
+                    border.width: 1
+                    border.color: Appearance.colors.colLayer0Border
+
+                    StyledRectangularShadow { target: card }
+
+                    ColumnLayout {
+                        id: layout
+                        anchors.fill: parent
+                        anchors.margins: Appearance.rounding.normal
+                        spacing: 12
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 8
+                            Layout.rightMargin: 8
+                            spacing: 8
+
+                            MaterialSymbol {
+                                text: "wallpaper"
+                                iconSize: 26
+                                color: Appearance.colors.colOnLayer0
+                            }
+                            StyledText {
+                                Layout.fillWidth: true
+                                text: "Wallpapers"
+                                font.pixelSize: Appearance.font.pixelSize.larger
+                                color: Appearance.colors.colOnLayer0
+                            }
+                            StyledText {
+                                text: `${WallpapersCarousel.entries.length} found`
+                                color: Appearance.colors.colSubtext
+                                font.pixelSize: Appearance.font.pixelSize.smaller
+                            }
+                        }
+
+                        // The carousel
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: carousel.implicitHeight
+
+                            WallpaperList {
+                                id: carousel
+                                anchors.centerIn: parent
+                                searchText: search.text
+                            }
+
+                            StyledText {
+                                anchors.centerIn: parent
+                                visible: WallpapersCarousel.entries.length === 0
+                                horizontalAlignment: Text.AlignHCenter
+                                color: Appearance.colors.colSubtext
+                                text: `No wallpapers found\nAdd images to ${WallpapersCarousel.wallpapersDir}`
+                            }
+                        }
+
+                        MaterialTextField {
+                            id: search
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 8
+                            Layout.rightMargin: 8
+                            placeholderText: "Search wallpapers…"
+
+                            Component.onCompleted: forceActiveFocus()
+
+                            Keys.onEscapePressed: GlobalStates.wallpaperSelectorOpen = false
+                            Keys.onLeftPressed: carousel.decrementCurrentIndex()
+                            Keys.onRightPressed: carousel.incrementCurrentIndex()
+                            Keys.onReturnPressed: {
+                                const it = carousel.currentItem;
+                                if (it?.modelData?.path) {
+                                    WallpapersCarousel.setWallpaper(it.modelData.path);
+                                    GlobalStates.wallpaperSelectorOpen = false;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    function toggleWallpaperSelector() {
-        if (Config.options.wallpaperSelector.useSystemFileDialog) {
-            Wallpapers.openFallbackPicker(Appearance.m3colors.darkmode);
-            return;
-        }
-        GlobalStates.wallpaperSelectorOpen = !GlobalStates.wallpaperSelectorOpen
+    function toggle() {
+        GlobalStates.wallpaperSelectorOpen = !GlobalStates.wallpaperSelectorOpen;
     }
 
     IpcHandler {
         target: "wallpaperSelector"
 
-        function toggle(): void {
-            root.toggleWallpaperSelector();
-        }
-
-        function random(): void {
-            Wallpapers.randomFromCurrentFolder();
-        }
-    }
-
-    GlobalShortcut {
-        name: "wallpaperSelectorToggle"
-        description: "Toggle wallpaper selector"
-        onPressed: {
-            root.toggleWallpaperSelector();
-        }
-    }
-
-    GlobalShortcut {
-        name: "wallpaperSelectorRandom"
-        description: "Select random wallpaper in current folder"
-        onPressed: {
-            Wallpapers.randomFromCurrentFolder();
-        }
+        function toggle(): void { root.toggle() }
+        function show(): void { GlobalStates.wallpaperSelectorOpen = true }
+        function hide(): void { GlobalStates.wallpaperSelectorOpen = false }
     }
 }
