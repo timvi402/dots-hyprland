@@ -169,14 +169,15 @@ Singleton {
         }
     }
 
-    // Ethernet: any non-wlan, non-lo interface with carrier=1
+    // Ethernet: any physical (has device symlink), non-wireless interface with carrier=1.
+    // Virtual interfaces (docker bridges, veth, virbr) have no device symlink and are skipped.
     Process {
         id: ethernetProc
         command: ["bash", "-c",
             "for f in /sys/class/net/*/carrier; do " +
-            "  d=${f%/carrier}; d=${d##*/}; " +
-            "  [[ \"$d\" != wlan* && \"$d\" != lo ]] && [[ $(cat $f 2>/dev/null) == 1 ]] && echo yes && break; " +
-            "done"]
+            "  d=${f%/carrier}; " +
+            "  [[ -e \"$d/device\" && ! -e \"$d/wireless\" ]] && [[ $(cat $f 2>/dev/null) == 1 ]] && echo yes && exit; " +
+            "done; echo no"]
         running: true
         stdout: SplitParser {
             onRead: data => { root.ethernet = data.trim() === "yes" }
