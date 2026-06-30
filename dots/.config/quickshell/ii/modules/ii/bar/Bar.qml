@@ -86,10 +86,18 @@ Scope {
                 MouseArea  {
                     id: hoverRegion
                     hoverEnabled: true
+                    focus: true
                     anchors {
                         fill: parent
                         rightMargin: (Config.options.interactions.deadPixelWorkaround.enable && barRoot.anchors.right) * 1
                         bottomMargin: (Config.options.interactions.deadPixelWorkaround.enable && barRoot.anchors.bottom) * 1
+                    }
+
+                    Keys.onPressed: event => {
+                        if ((event.modifiers & Qt.ControlModifier) && (event.modifiers & Qt.MetaModifier) && event.key === Qt.Key_Return) {
+                            barContent.focusFirstElement()
+                            event.accepted = true
+                        }
                     }
 
                     Item {
@@ -103,7 +111,14 @@ Scope {
 
                     BarContent {
                         id: barContent
-                        
+
+                        Component.onCompleted: {
+                            bar._barContentRef = barContent
+                        }
+                        Component.onDestruction: {
+                            bar._barContentRef = null
+                        }
+
                         implicitHeight: Appearance.sizes.barHeight
                         anchors {
                             right: parent.right
@@ -215,6 +230,8 @@ Scope {
         }
     }
 
+    property var _barContentRef: null
+
     IpcHandler {
         target: "bar"
 
@@ -228,6 +245,17 @@ Scope {
 
         function open(): void {
             GlobalStates.barOpen = true
+        }
+
+        function focusBar(): void {
+            console.log("focusBar IPC called. _barContentRef:", bar._barContentRef)
+            if (bar._barContentRef && bar._barContentRef.focusFirstElement) {
+                console.log("Calling focusFirstElement")
+                bar._barContentRef.focusFirstElement()
+                console.log("focusFirstElement called")
+            } else {
+                console.log("_barContentRef not available or no focusFirstElement method")
+            }
         }
     }
 
@@ -255,6 +283,17 @@ Scope {
 
         onPressed: {
             GlobalStates.barOpen = false;
+        }
+    }
+
+    GlobalShortcut {
+        name: "barFocusKeyboardNav"
+        description: "Focus bar for keyboard Tab navigation"
+
+        onPressed: {
+            if (bar._barContentRef && bar._barContentRef.focusFirstElement) {
+                bar._barContentRef.focusFirstElement()
+            }
         }
     }
 }

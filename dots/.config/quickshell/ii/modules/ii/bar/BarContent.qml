@@ -17,6 +17,24 @@ Item { // Bar content region
     property real useShortenedForm: (Appearance.sizes.barHellaShortenScreenWidthThreshold >= screen?.width) ? 2 : (Appearance.sizes.barShortenScreenWidthThreshold >= screen?.width) ? 1 : 0
     readonly property int centerSideModuleWidth: (useShortenedForm == 2) ? Appearance.sizes.barCenterSideModuleWidthHellaShortened : (useShortenedForm == 1) ? Appearance.sizes.barCenterSideModuleWidthShortened : Appearance.sizes.barCenterSideModuleWidth
 
+    function focusFirstElement(): void {
+        // Try to focus the left sidebar button first
+        if (barLeftSideMouseArea.visible) {
+            barLeftSideMouseArea.forceActiveFocus()
+            return
+        }
+        // Otherwise try workspaces
+        if (workspacesWidget.visible) {
+            workspacesWidget.forceActiveFocus()
+            return
+        }
+        // Otherwise try right sidebar
+        if (rightSidebarButton.visible) {
+            rightSidebarButton.forceActiveFocus()
+            return
+        }
+    }
+
     component VerticalBarSeparator: Rectangle {
         Layout.topMargin: Appearance.sizes.baseBarHeight / 3
         Layout.bottomMargin: Appearance.sizes.baseBarHeight / 3
@@ -50,6 +68,7 @@ Item { // Bar content region
     FocusedScrollMouseArea { // Left side | scroll to change brightness
         id: barLeftSideMouseArea
 
+        focusPolicy: Qt.TabFocus
         anchors {
             top: parent.top
             bottom: parent.bottom
@@ -114,12 +133,7 @@ Item { // Bar content region
             implicitWidth: root.centerSideModuleWidth
 
             Resources {
-                alwaysShowAllResources: root.useShortenedForm === 2
-                Layout.fillWidth: root.useShortenedForm === 2
-            }
-
-            Media {
-                visible: root.useShortenedForm < 2
+                alwaysShowAllResources: true
                 Layout.fillWidth: true
             }
         }
@@ -136,6 +150,7 @@ Item { // Bar content region
             Workspaces {
                 id: workspacesWidget
                 Layout.fillHeight: true
+                focusPolicy: Qt.TabFocus
                 MouseArea {
                     // Right-click to toggle overview
                     anchors.fill: parent
@@ -159,6 +174,7 @@ Item { // Bar content region
             anchors.verticalCenter: parent.verticalCenter
             implicitWidth: root.centerSideModuleWidth
             implicitHeight: rightCenterGroupContent.implicitHeight
+            focusPolicy: Qt.TabFocus
 
             onPressed: {
                 GlobalStates.sidebarRightOpen = !GlobalStates.sidebarRightOpen;
@@ -190,6 +206,7 @@ Item { // Bar content region
     FocusedScrollMouseArea { // Right side | scroll to change volume
         id: barRightSideMouseArea
 
+        focusPolicy: Qt.TabFocus
         anchors {
             top: parent.top
             bottom: parent.bottom
