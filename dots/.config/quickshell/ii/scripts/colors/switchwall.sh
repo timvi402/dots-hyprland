@@ -255,6 +255,9 @@ switch() {
             generate_colors_material_args=(--path "$imgpath")
             # Update wallpaper path in config
             set_wallpaper_path "$imgpath"
+            # Keep omarchy as the single source of truth for the wallpaper:
+            # point its current/background at the same image (also relaunches swaybg).
+            command -v omarchy-theme-bg-set &>/dev/null && omarchy-theme-bg-set "$imgpath" >/dev/null 2>&1
             remove_restore
         fi
     fi
@@ -304,11 +307,17 @@ switch() {
     fi
 
     matugen "${matugen_args[@]}"
-    source "$(eval echo $ILLOGICAL_IMPULSE_VIRTUAL_ENV)/bin/activate"
-    python3 "$SCRIPT_DIR/generate_colors_material.py" "${generate_colors_material_args[@]}" \
-        > "$STATE_DIR"/user/generated/material_colors.scss
-    deactivate
-    "$SCRIPT_DIR"/applycolor.sh
+    # Terminal/kitty colors intentionally follow the omarchy theme palette
+    # (single source of truth), NOT wallpaper-derived material colors.
+    # The block below generated a 16-color terminal scheme and pushed it into
+    # kitty/terminals via applycolor.sh; it is disabled on purpose.
+    # (generate_colors_material.py was also broken against the current
+    #  materialyoucolor: KeyError 'primary_paletteKeyColor'.)
+    # source "$(eval echo $ILLOGICAL_IMPULSE_VIRTUAL_ENV)/bin/activate"
+    # python3 "$SCRIPT_DIR/generate_colors_material.py" "${generate_colors_material_args[@]}" \
+    #     > "$STATE_DIR"/user/generated/material_colors.scss
+    # deactivate
+    # "$SCRIPT_DIR"/applycolor.sh
 
     # Pass screen width, height, and wallpaper path to post_process
     max_width_desired="$(hyprctl monitors -j | jq '([.[].width] | min)' | xargs)"
