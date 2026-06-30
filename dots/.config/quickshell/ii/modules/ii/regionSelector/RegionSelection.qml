@@ -77,6 +77,14 @@ PanelWindow {
     property real dragDiffY: 0
     property bool draggedAway: (dragDiffX !== 0 || dragDiffY !== 0)
     property bool dragging: false
+    // Keyboard-driven nudge state (held keys, applied on a timer for diagonal + smooth motion)
+    property bool kbLeft: false
+    property bool kbRight: false
+    property bool kbUp: false
+    property bool kbDown: false
+    property bool kbResize: false // Shift held -> resize instead of move
+    property bool kbFine: false   // Ctrl held -> 1px fine steps
+    property bool kbFast: false   // Alt held -> 5x faster
     property list<point> points: []
     property var mouseButton: null
     property var imageRegions: []
@@ -183,6 +191,72 @@ PanelWindow {
     property real regionHeight: Math.abs(draggingY - dragStartY)
     property real regionX: Math.min(dragStartX, draggingX)
     property real regionY: Math.min(dragStartY, draggingY)
+
+    // Keyboard-driven selection (arrows to move, Shift+arrows to resize, Enter to confirm)
+    function keyboardEnsureSelection() {
+        // Create a default centered box on first key press if none exists yet
+        if (root.regionWidth >= 1 && root.regionHeight >= 1) return false;
+        const w = Math.min(400, root.screen.width);
+        const h = Math.min(300, root.screen.height);
+        root.dragStartX = Math.round((root.screen.width - w) / 2);
+        root.dragStartY = Math.round((root.screen.height - h) / 2);
+        root.draggingX = root.dragStartX + w;
+        root.draggingY = root.dragStartY + h;
+        root.dragging = true;
+        root.dragDiffX = w;
+        root.dragDiffY = h;
+        return true;
+    }
+    function keyboardNormalizeCorners() {
+        const x0 = Math.min(root.dragStartX, root.draggingX);
+        const x1 = Math.max(root.dragStartX, root.draggingX);
+        const y0 = Math.min(root.dragStartY, root.draggingY);
+        const y1 = Math.max(root.dragStartY, root.draggingY);
+        root.dragStartX = x0; root.draggingX = x1;
+        root.dragStartY = y0; root.draggingY = y1;
+    }
+    function keyboardMove(dx, dy) {
+        if (keyboardEnsureSelection()) return;
+        keyboardNormalizeCorners();
+        const w = root.draggingX - root.dragStartX;
+        const h = root.draggingY - root.dragStartY;
+        const nx = Math.max(0, Math.min(root.dragStartX + dx, root.screen.width - w));
+        const ny = Math.max(0, Math.min(root.dragStartY + dy, root.screen.height - h));
+        root.dragStartX = nx; root.draggingX = nx + w;
+        root.dragStartY = ny; root.draggingY = ny + h;
+        root.dragging = true;
+        root.dragDiffX = w; root.dragDiffY = h;
+    }
+    function keyboardResize(dx, dy) {
+        if (keyboardEnsureSelection()) return;
+        keyboardNormalizeCorners();
+        root.draggingX = Math.max(root.dragStartX + 1, Math.min(root.draggingX + dx, root.screen.width));
+        root.draggingY = Math.max(root.dragStartY + 1, Math.min(root.draggingY + dy, root.screen.height));
+        root.dragging = true;
+        root.dragDiffX = root.draggingX - root.dragStartX;
+        root.dragDiffY = root.draggingY - root.dragStartY;
+    }
+    function keyboardClearHeld() {
+        root.kbLeft = root.kbRight = root.kbUp = root.kbDown = false;
+        root.kbResize = root.kbFine = root.kbFast = false;
+    }
+    onVisibleChanged: if (!visible) keyboardClearHeld()
+
+    // Per-tick movement based on currently-held arrow keys (allows diagonal motion)
+    Timer {
+        id: kbNudgeTimer
+        interval: 16
+        repeat: true
+        running: root.visible && (root.kbLeft || root.kbRight || root.kbUp || root.kbDown)
+        onTriggered: {
+            const speed = root.kbFine ? 1 : (root.kbFast ? 30 : 6);
+            const dx = ((root.kbRight ? 1 : 0) - (root.kbLeft ? 1 : 0)) * speed;
+            const dy = ((root.kbDown ? 1 : 0) - (root.kbUp ? 1 : 0)) * speed;
+            if (dx === 0 && dy === 0) return;
+            if (root.kbResize) root.keyboardResize(dx, dy);
+            else root.keyboardMove(dx, dy);
+        }
+    }
 
     // Screenshot stuff
     TempScreenshotProcess {
@@ -312,9 +386,40 @@ PanelWindow {
         visible: root.phase === RegionSelection.Phase.Select
 
         focus: root.visible
-        Keys.onPressed: (event) => { // Esc to close
+        Keys.onPressed: (event) => {
+            // Esc to close
             if (event.key === Qt.Key_Escape) {
                 root.dismiss();
+                event.accepted = true;
+                return;
+            }
+            // Enter to confirm the current selection
+            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (root.regionWidth >= 1 && root.regionHeight >= 1) root.snip();
+                event.accepted = true;
+                return;
+            }
+            // Arrows move (hold two for diagonal); Shift resizes; Ctrl = fine, Alt = 5x fast
+            switch (event.key) {
+                case Qt.Key_Left:    root.kbLeft = true; event.accepted = true; break;
+                case Qt.Key_Right:   root.kbRight = true; event.accepted = true; break;
+                case Qt.Key_Up:      root.kbUp = true; event.accepted = true; break;
+                case Qt.Key_Down:    root.kbDown = true; event.accepted = true; break;
+                case Qt.Key_Shift:   root.kbResize = true; break;
+                case Qt.Key_Control: root.kbFine = true; break;
+                case Qt.Key_Alt:     root.kbFast = true; break;
+            }
+        }
+        Keys.onReleased: (event) => {
+            if (event.isAutoRepeat) return; // ignore synthetic key-repeat releases
+            switch (event.key) {
+                case Qt.Key_Left:    root.kbLeft = false; break;
+                case Qt.Key_Right:   root.kbRight = false; break;
+                case Qt.Key_Up:      root.kbUp = false; break;
+                case Qt.Key_Down:    root.kbDown = false; break;
+                case Qt.Key_Shift:   root.kbResize = false; break;
+                case Qt.Key_Control: root.kbFine = false; break;
+                case Qt.Key_Alt:     root.kbFast = false; break;
             }
         }
     }
